@@ -18,9 +18,27 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+import torch
 
 
-def test_copy_metadata_files_copies_and_preserves_source(tmp_path):
+@pytest.mark.cpu_only
+@pytest.mark.parametrize(
+    ("config", "cast_dtype", "expected"),
+    [
+        ({"dtype": "bfloat16"}, None, {"dtype": "bfloat16"}),
+        ({}, torch.float32, {"torch_dtype": "float32"}),
+        ({"torch_dtype": "bfloat16"}, torch.float32, {"torch_dtype": "float32"}),
+        ({"dtype": "bfloat16"}, torch.float32, {"dtype": "float32", "torch_dtype": "float32"}),
+        (
+            {"dtype": "bfloat16", "torch_dtype": "float16"},
+            torch.float32,
+            {"dtype": "float32", "torch_dtype": "float32"},
+        ),
+    ],
+)
+def test_copy_metadata_files_copies_and_preserves_source(
+    tmp_path: Path, config: dict[str, str], cast_dtype: torch.dtype | None, expected: dict[str, str]
+) -> None:
     from tools.offline_hf_consolidation import copy_metadata_files
 
     meta_dir = tmp_path / ".hf_metadata"
@@ -28,18 +46,17 @@ def test_copy_metadata_files_copies_and_preserves_source(tmp_path):
     meta_dir.mkdir()
     out_dir.mkdir()
 
-    # Files: mapping (should be skipped) and another metadata file (should be moved)
     (meta_dir / "fqn_to_file_index_mapping.json").write_text(json.dumps({"layer.weight": 0}))
-    (meta_dir / "config.json").write_text("{}")
+    (meta_dir / "config.json").write_text(json.dumps(config))
 
-    copy_metadata_files(str(meta_dir), str(out_dir))
+    copy_metadata_files(str(meta_dir), str(out_dir), cast_dtype=cast_dtype)
 
     # Input metadata directory is preserved for repeatable offline export.
     assert meta_dir.exists()
-    assert (meta_dir / "config.json").exists()
+    assert json.loads((meta_dir / "config.json").read_text()) == config
     assert (meta_dir / "fqn_to_file_index_mapping.json").exists()
     # Non-mapping files copied.
-    assert (out_dir / "config.json").exists()
+    assert json.loads((out_dir / "config.json").read_text()) == expected
     # Mapping file should not be copied into the output directory here
     assert not (out_dir / "fqn_to_file_index_mapping.json").exists()
 

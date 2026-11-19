@@ -70,15 +70,17 @@ def _config_torch_dtype_value(dtype: torch.dtype) -> str:
 
 
 def _update_config_dtype(config_path: str, cast_dtype: torch.dtype) -> None:
-    """Update config.json torch_dtype to match a requested consolidated weight dtype."""
+    """Record the requested weight dtype for current and legacy Transformers readers."""
     try:
         with open(config_path, "r") as f:
             config = json.load(f)
     except json.JSONDecodeError:
-        logger.warning("Could not update torch_dtype in %s because it is not valid JSON.", config_path)
+        logger.warning("Could not update dtype in %s because it is not valid JSON.", config_path)
         return
 
     config["torch_dtype"] = _config_torch_dtype_value(cast_dtype)
+    if "dtype" in config:
+        config["dtype"] = config["torch_dtype"]
     with open(config_path, "w") as f:
         json.dump(config, f, indent=2)
         f.write("\n")
